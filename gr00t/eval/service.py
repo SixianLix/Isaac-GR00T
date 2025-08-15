@@ -17,8 +17,10 @@ from dataclasses import dataclass
 from io import BytesIO
 from typing import Any, Callable, Dict
 
+from websocket import WebSocket
 import torch
 import zmq
+import msgpack_numpy
 
 
 class TorchSerializer:
@@ -125,69 +127,135 @@ class BaseInferenceServer:
                 self.socket.send(TorchSerializer.to_bytes({"error": str(e)}))
 
 
+# class BaseInferenceClient:
+#     def __init__(
+#         self,
+#         host: str = "localhost",
+#         port: int = 5555,
+#         timeout_ms: int = 15000,
+#         api_token: str = None,
+#     ):
+#         self.context = zmq.Context()
+#         self.host = host
+#         self.port = port
+#         self.timeout_ms = timeout_ms
+#         self.api_token = api_token
+#         self._init_socket()
+
+#     def _init_socket(self):
+#         """Initialize or reinitialize the socket with current settings"""
+#         self.socket = self.context.socket(zmq.REQ)
+#         self.socket.connect(f"tcp://{self.host}:{self.port}")
+
+#     def ping(self) -> bool:
+#         try:
+#             self.call_endpoint("ping", requires_input=False)
+#             return True
+#         except zmq.error.ZMQError:
+#             self._init_socket()  # Recreate socket for next attempt
+#             return False
+
+#     def kill_server(self):
+#         """
+#         Kill the server.
+#         """
+#         self.call_endpoint("kill", requires_input=False)
+
+#     def call_endpoint(
+#         self, endpoint: str, data: dict | None = None, requires_input: bool = True
+#     ) -> dict:
+#         """
+#         Call an endpoint on the server.
+
+#         Args:
+#             endpoint: The name of the endpoint.
+#             data: The input data for the endpoint.
+#             requires_input: Whether the endpoint requires input data.
+#         """
+#         import ipdb;ipdb.set_trace()
+#         request: dict = {"endpoint": endpoint}
+#         if requires_input:
+#             request["data"] = data
+#         if self.api_token:
+#             request["api_token"] = self.api_token
+
+#         self.socket.send(TorchSerializer.to_bytes(request))
+#         message = self.socket.recv()
+#         response = TorchSerializer.from_bytes(message)
+
+#         if "error" in response:
+#             raise RuntimeError(f"Server error: {response['error']}")
+#         return response
+
+#     def __del__(self):
+#         """Cleanup resources on destruction"""
+#         self.socket.close()
+#         self.context.term()
+
+
 class BaseInferenceClient:
     def __init__(
         self,
         host: str = "localhost",
-        port: int = 5555,
+        port: int = 8000,
         timeout_ms: int = 15000,
         api_token: str = None,
     ):
-        self.context = zmq.Context()
         self.host = host
         self.port = port
-        self.timeout_ms = timeout_ms
+        self.timeout_ms = timeout_ms / 1000  # Convert to seconds
         self.api_token = api_token
         self._init_socket()
 
     def _init_socket(self):
-        """Initialize or reinitialize the socket with current settings"""
-        self.socket = self.context.socket(zmq.REQ)
-        self.socket.connect(f"tcp://{self.host}:{self.port}")
+        self.socket = WebSocket()
+        print(f"Connecting to ws://{self.host}:{self.port}")
+        try:
+            self.socket.connect(f"ws://{self.host}:{self.port}")
+            print("WebSocket connection established")
+        except Exception as e:
+            print(f"WebSocket connection failed: {e}")
+            raise
+        self.socket.settimeout(self.timeout_ms)
 
     def ping(self) -> bool:
         try:
             self.call_endpoint("ping", requires_input=False)
             return True
-        except zmq.error.ZMQError:
-            self._init_socket()  # Recreate socket for next attempt
+        except Exception as e:
+            print(f"Ping failed: {e}")
             return False
 
     def kill_server(self):
-        """
-        Kill the server.
-        """
         self.call_endpoint("kill", requires_input=False)
 
     def call_endpoint(
         self, endpoint: str, data: dict | None = None, requires_input: bool = True
     ) -> dict:
-        """
-        Call an endpoint on the server.
-
-        Args:
-            endpoint: The name of the endpoint.
-            data: The input data for the endpoint.
-            requires_input: Whether the endpoint requires input data.
-        """
         request: dict = {"endpoint": endpoint}
         if requires_input:
             request["data"] = data
         if self.api_token:
             request["api_token"] = self.api_token
 
-        self.socket.send(TorchSerializer.to_bytes(request))
-        message = self.socket.recv()
-        response = TorchSerializer.from_bytes(message)
+        print("Sending request:", request)
+        try:
+            self.socket.send(msgpack_numpy.packb(request))  # Use msgpack_numpy
+            message = self.socket.recv()
+            print("Received message length:", len(message))
+            response = msgpack_numpy.unpackb(message)  # Use msgpack_numpy
+            print("Deserialized response:", response)
+        except self.socket.timeout:
+            raise RuntimeError("WebSocket receive timeout")
+        except Exception as e:
+            raise RuntimeError(f"WebSocket error: {e}")
 
         if "error" in response:
             raise RuntimeError(f"Server error: {response['error']}")
         return response
 
     def __del__(self):
-        """Cleanup resources on destruction"""
         self.socket.close()
-        self.context.term()
 
 
 class ExternalRobotInferenceClient(BaseInferenceClient):

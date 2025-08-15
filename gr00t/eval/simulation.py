@@ -164,6 +164,7 @@ class SimulationInferenceClient(BaseInferenceClient, BasePolicy):
         return config.env_name, episode_successes
 
     def _get_actions_from_server(self, observations: Dict[str, Any]) -> Dict[str, Any]:
+        
         """Process observations and get actions from the inference server."""
         # Get actions from the server
         action_dict = self.get_action(observations)
@@ -179,7 +180,8 @@ class SimulationInferenceClient(BaseInferenceClient, BasePolicy):
 def _create_single_env(config: SimulationConfig, idx: int) -> gym.Env:
     """Create a single environment with appropriate wrappers."""
     # Create base environment
-    env = gym.make(config.env_name, enable_render=True)
+    #TODO for headless
+    env = gym.make(config.env_name, enable_render=False)
     # Add video recording wrapper if needed (only for the first environment)
     if config.video.video_dir is not None:
         video_recorder = VideoRecorder.create_h264(

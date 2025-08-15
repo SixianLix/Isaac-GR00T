@@ -46,9 +46,9 @@ if __name__ == "__main__":
         help="Name of the environment to run.",
         default="<ENV_NAME>",  # change this to your environment name
     )
-    parser.add_argument("--port", type=int, help="Port number for the server.", default=5555)
+    parser.add_argument("--port", type=int, help="Port number for the server.", default=8000)
     parser.add_argument(
-        "--host", type=str, help="Host address for the server.", default="localhost"
+        "--host", type=str, help="Host address for the server.", default="127.0.0.1"
     )
     parser.add_argument("--video_dir", type=str, help="Directory to save videos.", default=None)
     parser.add_argument("--n_episodes", type=int, help="Number of episodes to run.", default=2)
@@ -83,11 +83,13 @@ if __name__ == "__main__":
         # Create a simulation client
         simulation_client = SimulationInferenceClient(host=args.host, port=args.port)
 
-        print("Available modality configs:")
-        modality_config = simulation_client.get_modality_config()
-        print(modality_config.keys())
+        # print("Available modality configs:")
+        # modality_config = simulation_client.get_modality_config()
+        
+        # print(modality_config.keys())
 
         # Create simulation configuration
+        
         config = SimulationConfig(
             env_name=args.env_name,
             n_episodes=args.n_episodes,
@@ -100,6 +102,7 @@ if __name__ == "__main__":
 
         # Run the simulation
         print(f"Running simulation for {args.env_name}...")
+        
         env_name, episode_successes = simulation_client.run_simulation(config)
 
         # Print results
