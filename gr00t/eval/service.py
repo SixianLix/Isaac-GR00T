@@ -15,13 +15,15 @@
 
 from dataclasses import dataclass
 from io import BytesIO
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, Optional
+import numpy as np
 
-from websocket import WebSocket
 import torch
-import zmq
-import msgpack_numpy
+# import zmq
 
+import asyncio
+import msgpack_numpy as m
+import websockets
 
 class TorchSerializer:
     @staticmethod
@@ -193,69 +195,100 @@ class BaseInferenceServer:
 #         self.context.term()
 
 
+
 class BaseInferenceClient:
     def __init__(
         self,
         host: str = "localhost",
         port: int = 8000,
-        timeout_ms: int = 15000,
-        api_token: str = None,
+        timeout_ms: int = 150_000,
+        api_token: Optional[str] = None,
     ):
-        self.host = host
-        self.port = port
-        self.timeout_ms = timeout_ms / 1000  # Convert to seconds
+        self.url = f"ws://{host}:{port}"
+        self.timeout = timeout_ms / 1000  # 秒
         self.api_token = api_token
-        self._init_socket()
 
-    def _init_socket(self):
-        self.socket = WebSocket()
-        print(f"Connecting to ws://{self.host}:{self.port}")
-        try:
-            self.socket.connect(f"ws://{self.host}:{self.port}")
-            print("WebSocket connection established")
-        except Exception as e:
-            print(f"WebSocket connection failed: {e}")
-            raise
-        self.socket.settimeout(self.timeout_ms)
-
+    # ---------- 公共同步外观（内部转异步） ----------
     def ping(self) -> bool:
+        return asyncio.run(self._ping_async())
+
+    def kill_server(self) -> None:
+        return asyncio.run(self._kill_async())
+
+    def call_endpoint(
+        self,
+        endpoint: str,
+        data: Optional[Dict[str, Any]] = None,
+        requires_input: bool = True,
+    ) -> Dict[str, Any]:
+        """同步外壳，方便旧代码调用"""
+        return asyncio.run(self._call_async(endpoint, data, requires_input))
+
+    # ---------- 异步实现 ----------
+    async def _ping_async(self) -> bool:
         try:
-            self.call_endpoint("ping", requires_input=False)
+            await self._call_async("ping", requires_input=False)
             return True
         except Exception as e:
             print(f"Ping failed: {e}")
             return False
 
-    def kill_server(self):
-        self.call_endpoint("kill", requires_input=False)
+    async def _kill_async(self) -> None:
+        await self._call_async("kill", requires_input=False)
 
-    def call_endpoint(
-        self, endpoint: str, data: dict | None = None, requires_input: bool = True
-    ) -> dict:
-        request: dict = {"endpoint": endpoint}
-        if requires_input:
-            request["data"] = data
-        if self.api_token:
-            request["api_token"] = self.api_token
+    async def _call_async(
+        self,
+        endpoint: str,
+        data: Optional[Dict[str, Any]] = None,
+        requires_input: bool = True,
+    ) -> Dict[str, Any]:
+        async with websockets.connect(self.url, close_timeout=self.timeout) as ws:
+            await ws.send(m.packb(data))
+            raw = await asyncio.wait_for(ws.recv(), timeout=self.timeout)
+            response = m.unpackb(raw)
 
-        print("Sending request:", request)
-        try:
-            self.socket.send(msgpack_numpy.packb(request))  # Use msgpack_numpy
-            message = self.socket.recv()
-            print("Received message length:", len(message))
-            response = msgpack_numpy.unpackb(message)  # Use msgpack_numpy
-            print("Deserialized response:", response)
-        except self.socket.timeout:
-            raise RuntimeError("WebSocket receive timeout")
-        except Exception as e:
-            raise RuntimeError(f"WebSocket error: {e}")
+            def try_decode_numpy(val):
+                # 兼容两种格式:
+                # 1. {b'nd': True, b'type': ..., b'shape': ..., b'data': ...}
+                # 2. {b'__ndarray__': True, b'data': ..., b'dtype': ..., b'shape': ...}
+                if isinstance(val, dict):
+                    # 格式1
+                    if (
+                        b'nd' in val
+                        and b'type' in val
+                        and b'shape' in val
+                        and b'data' in val
+                    ):
+                        dtype = np.dtype(val[b'type'].decode() if isinstance(val[b'type'], bytes) else val[b'type'])
+                        arr = np.frombuffer(val[b'data'], dtype=dtype)
+                        arr = arr.reshape(val[b'shape'])
+                        return arr
+                    # 格式2
+                    if (
+                        b'__ndarray__' in val
+                        and b'data' in val
+                        and b'dtype' in val
+                        and b'shape' in val
+                    ):
+                        dtype = np.dtype(val[b'dtype'].decode() if isinstance(val[b'dtype'], bytes) else val[b'dtype'])
+                        arr = np.frombuffer(val[b'data'], dtype=dtype)
+                        arr = arr.reshape(val[b'shape'])
+                        return arr
+                return val
 
-        if "error" in response:
-            raise RuntimeError(f"Server error: {response['error']}")
-        return response
+            # 递归处理嵌套字典
+            def decode_all(obj):
+                if isinstance(obj, dict):
+                    return {k.decode() if isinstance(k, bytes) else k: decode_all(try_decode_numpy(v)) for k, v in obj.items()}
+                elif isinstance(obj, list):
+                    return [decode_all(v) for v in obj]
+                else:
+                    return obj
 
-    def __del__(self):
-        self.socket.close()
+            response = decode_all(response)
+            if "error" in response:
+                raise RuntimeError(f"Server error: {response['error']}")
+            return response
 
 
 class ExternalRobotInferenceClient(BaseInferenceClient):
@@ -270,3 +303,9 @@ class ExternalRobotInferenceClient(BaseInferenceClient):
         by the policy, which contains the modalities configuration.
         """
         return self.call_endpoint("get_action", observations)
+
+if __name__ == "__main__":
+    client = BaseInferenceClient()
+    print("ping:", client.ping())
+    # 显式手动关
+    client.socket.close()

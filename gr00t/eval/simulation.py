@@ -62,7 +62,7 @@ class MultiStepConfig:
 
     video_delta_indices: np.ndarray = field(default=np.array([0]))
     state_delta_indices: np.ndarray = field(default=np.array([0]))
-    n_action_steps: int = 16
+    n_action_steps: int = 10
     max_episode_steps: int = 1440
 
 
@@ -128,13 +128,20 @@ class SimulationInferenceClient(BaseInferenceClient, BasePolicy):
         completed_episodes = 0
         current_successes = [False] * config.n_envs
         episode_successes = []
+        
         # Initial environment reset
         obs, _ = self.env.reset()
         # Main simulation loop
         while completed_episodes < config.n_episodes:
             # Process observations and get actions from the server
             actions = self._get_actions_from_server(obs)
-            # Step the environment
+            for k, v in actions.items():
+                if isinstance(v, list):
+                    v = np.array(v)
+                if isinstance(v, np.ndarray) and v.ndim == 2:
+                    actions[k] = np.expand_dims(v, axis=0)
+                else:
+                    actions[k] = v
             next_obs, rewards, terminations, truncations, env_infos = self.env.step(actions)
             # Update episode tracking
             for env_idx in range(config.n_envs):

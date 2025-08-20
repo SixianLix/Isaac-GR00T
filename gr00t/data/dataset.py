@@ -551,6 +551,7 @@ class LeRobotSingleDataset(Dataset):
             parquet_path = self.dataset_path / self.data_path_pattern.format(
                 episode_chunk=chunk_index, episode_index=trajectory_id
             )
+            print(chunk_index)
             assert parquet_path.exists(), f"Parquet file not found at {parquet_path}"
             return pd.read_parquet(parquet_path)
 
