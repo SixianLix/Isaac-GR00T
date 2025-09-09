@@ -23,13 +23,7 @@
 ## client脚本
 ```bash
 cd Isaac-GR00T
-python3 scripts/simulation_service.py --client \
-    --env_name gr1_unified/PnPCupToDrawerClose_GR1ArmsAndWaistFourierHands_Env \
-    --video_dir ./videos \
-    --max_episode_steps 720 \
-    --n_envs 1 \
-    --n_episodes 10 \ 
-    --n_action_steps 10
+python3 scripts/simulation_service.py --client  --env_name gr1_unified/PnPCupToDrawerClose_GR1ArmsAndWaistFourierHands_Env --video_dir ./videos  --max_episode_steps 720  --n_envs 1 --n_episodes 1  --n_action_steps 10 
 
 24个评测任务
 ```bash

@@ -26,6 +26,7 @@ from .state_action import (
     StateActionToTensor,
     StateActionTransform,
 )
+import albumentations
 from .video import (
     VideoColorJitter,
     VideoCrop,
