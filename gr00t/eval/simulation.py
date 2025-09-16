@@ -135,18 +135,53 @@ class SimulationInferenceClient(BaseInferenceClient, BasePolicy):
         
         # Initial environment reset
         obs, _ = self.env.reset()
+
+        part_config = {
+            "action.left_arm": {"start": 0, "end": 7},
+            "action.left_hand": {"start": 7, "end": 13},
+            "action.left_leg": {"start": 13, "end": 19},
+            "action.neck": {"start": 19, "end": 22},
+            "action.right_arm": {"start": 22, "end": 29},
+            "action.right_hand": {"start": 29, "end": 35},
+            "action.right_leg": {"start": 35, "end": 41},
+            "action.waist": {"start": 41, "end": 44}
+        }
+
+        action_mapping = {
+            "action.left_arm": (0, 7),    # actions[:, 0:7] -> full_actions[:, 0:7]
+            "action.left_hand": (7, 13),  # actions[:, 7:13] -> full_actions[:, 7:13]
+            "action.right_arm": (13, 20), # actions[:, 13:20] -> full_actions[:, 22:29]
+            "action.right_hand": (20, 26) # actions[:, 20:26] -> full_actions[:, 29:35]
+        }
+
+        
         # Main simulation loop
         while completed_episodes < config.n_episodes:
             # Process observations and get actions from the server
             actions = self._get_actions_from_server(obs)
-            for k, v in actions.items():
-                if isinstance(v, list):
-                    v = np.array(v)
-                if isinstance(v, np.ndarray) and v.ndim == 2:
-                    actions[k] = np.expand_dims(v, axis=0)
-                else:
-                    actions[k] = v
-            next_obs, rewards, terminations, truncations, env_infos = self.env.step(actions)
+            total_dim = max(part["end"] for part in part_config.values())  # 44
+            assert actions.shape[1] == sum(end - start for start, end in action_mapping.values()), \
+                f"Actions dim {actions.shape[1]} does not match mapping {sum(end - start for start, end in action_mapping.values())}"
+
+            full_actions = np.zeros((actions.shape[0], total_dim))
+
+            for part, (src_start, src_end) in action_mapping.items():
+                dst_start, dst_end = part_config[part]["start"], part_config[part]["end"]
+                assert (dst_end - dst_start) == (src_end - src_start), \
+                    f"Mismatch in {part}: source {src_end - src_start}, dest {dst_end - dst_start}"
+                full_actions[:, dst_start:dst_end] = actions[:, src_start:src_end]
+
+            actions_dict = {}
+            for key, info in part_config.items():
+                start, end = info["start"], info["end"]
+                action_slice = full_actions[:, start:end]  
+                if isinstance(action_slice, list):
+                    action_slice = np.array(action_slice)
+                if isinstance(action_slice, np.ndarray) and action_slice.ndim == 2:
+                    action_slice = np.expand_dims(action_slice, axis=0)  
+                actions_dict[key] = action_slice
+            
+            next_obs, rewards, terminations, truncations, env_infos = self.env.step(actions_dict)
             # Update episode tracking
             for env_idx in range(config.n_envs):
                 current_successes[env_idx] |= bool(env_infos["success"][env_idx][0])
@@ -192,7 +227,7 @@ def _create_single_env(config: SimulationConfig, idx: int) -> gym.Env:
     """Create a single environment with appropriate wrappers."""
     # Create base environment
     #TODO for headless
-    env = gym.make(config.env_name, enable_render=False)
+    env = gym.make(config.env_name, enable_render=True)
     # Add video recording wrapper if needed (only for the first environment)
     if config.video.video_dir is not None:
         video_recorder = VideoRecorder.create_h264(
