@@ -97,6 +97,7 @@ class SimulationInferenceClient(BaseInferenceClient, BasePolicy):
             observations["video.ego_view"] = observations.pop(
                 "video.ego_view_bg_crop_pad_res256_freq20"
             )
+        print(observations.keys())
         return self.call_endpoint("get_action", observations)
 
     def get_modality_config(self) -> Dict[str, ModalityConfig]:
