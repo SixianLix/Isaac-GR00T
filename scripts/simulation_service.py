@@ -48,7 +48,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--port", type=int, help="Port number for the server.", default=8000)
     parser.add_argument(
-        "--host", type=str, help="Host address for the server.", default="127.0.0.1"
+        "--host", type=str, help="Host address for the server.", default="10.244.187.4"
     )
     parser.add_argument("--video_dir", type=str, help="Directory to save videos.", default=None)
     parser.add_argument("--n_episodes", type=int, help="Number of episodes to run.", default=2)
