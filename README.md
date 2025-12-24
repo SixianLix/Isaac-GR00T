@@ -19,13 +19,13 @@
 [![GitHub star chart](https://img.shields.io/github/stars/NVIDIA/Isaac-GR00T?style=flat-square)](https://star-history.com/#NVIDIA/Isaac-GR00T)
 [![Open Issues](https://img.shields.io/github/issues-raw/NVIDIA/Isaac-GR00T?style=flat-square)](https://github.com/NVIDIA/Isaac-GR00T/issues)
 
-# 适配到openpi server
-## client脚本
+# Adapt to openpi server
+## client scripts
 ```bash
 cd Isaac-GR00T
 python3 scripts/simulation_service.py --client  --env_name gr1_unified/PnPBottleToCabinetClose_GR1ArmsAndWaistFourierHands_Env --video_dir ./videos  --max_episode_steps 720  --n_envs 1 --n_episodes 1  --n_action_steps 10 
 
-24个评测任务
+24 suites
 ```bash
 gr1_unified/PnPCupToDrawerClose_GR1ArmsAndWaistFourierHands_Env
 gr1_unified/PnPPotatoToMicrowaveClose_GR1ArmsAndWaistFourierHands_Env
